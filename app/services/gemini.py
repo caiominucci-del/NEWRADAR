@@ -72,14 +72,17 @@ class EditorialResult:
         }
 
     @classmethod
-    def fallback(cls, tema: str) -> "EditorialResult":
+    def fallback(cls, tema: str, reason: str = "") -> "EditorialResult":
+        if not reason:
+            reason = "A API Gemini não foi chamada. Verifique a configuração e os logs."
+
         return cls(
-            angulo=f"Configure GEMINI_API_KEY para análise editorial de '{tema}'.",
-            titulo=f"A verdade sobre {tema} que ninguém conta",
-            gancho=f"O que está acontecendo com {tema} vai mudar o Brasil.",
+            angulo=f"Simulação para '{tema}'. Razão: {reason}",
+            titulo=f"A verdade sobre {tema} que ninguém conta (simulado)",
+            gancho=f"O que está acontecendo com {tema} vai mudar o Brasil (simulado).",
             urgencia="media",
             formatos=["Análise", "Documentário"],
-            por_que_agora="Tema em alta nas buscas brasileiras.",
+            por_que_agora="Tema em alta nas buscas brasileiras (simulado).",
             is_real=False,
         )
 
@@ -113,7 +116,7 @@ async def _fetch_editorial(
     settings: Settings,
 ) -> EditorialResult:
     if not settings.gemini_api_key:
-        return EditorialResult.fallback(tema)
+        return EditorialResult.fallback(tema, reason="GEMINI_API_KEY não configurada.")
 
     prompt = PROMPT_TEMPLATE.format(
         tema=tema,
@@ -155,5 +158,5 @@ async def _fetch_editorial(
             is_real=True,
         )
 
-    except Exception:
-        return EditorialResult.fallback(tema)
+    except Exception as e:
+        return EditorialResult.fallback(tema, reason=f"Erro na API Gemini: {e}")

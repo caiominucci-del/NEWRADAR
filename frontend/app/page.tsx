@@ -37,7 +37,6 @@ export default function DashboardPage() {
 
         <div className="hidden md:flex gap-2">
           <Badge tone="info">Poll: 1m</Badge>
-          <Badge tone="neutral">Sem autenticação</Badge>
         </div>
       </div>
 

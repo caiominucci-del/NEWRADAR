@@ -27,7 +27,7 @@ export default function LoginPage() {
       setAuthToken(auth.access_token);
       const me = await apiMe();
       setMsg(`Autenticado como ${me.user}`);
-      router.push("/editorial");
+      router.push("/");
     } catch (ex: any) {
       setErr(ex?.message || "Falha no login");
     } finally {
