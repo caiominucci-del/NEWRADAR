@@ -128,7 +128,7 @@ async def _fetch_editorial(
     try:
         url = (
             "https://generativelanguage.googleapis.com/v1beta/models/"
-            f"gemini-1.5-flash:generateContent?key={settings.gemini_api_key}"
+            f"gemini-pro:generateContent?key={settings.gemini_api_key}"
         )
         async with httpx.AsyncClient(timeout=20) as client:
             resp = await client.post(
