@@ -1,10 +1,11 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { useParams } from "next/navigation";
+import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
 import useSWR from "swr";
 
+import { getAuthToken } from "../../../lib/auth";
 import Card from "../../../components/ui/Card";
 import Badge from "../../../components/ui/Badge";
 import Button from "../../../components/ui/Button";
@@ -34,6 +35,13 @@ function safeJsonParse<T>(s: string | null): T | null {
 
 export default function TopicDetailPage() {
   const params = useParams();
+  const router = useRouter();
+  useEffect(() => {
+    if (!getAuthToken()) {
+      router.replace("/login");
+    }
+  }, [router]);
+
   const topicId = String(params.topic_id || "");
 
   const { data, isLoading, mutate, error } = useSWR(

@@ -1,8 +1,10 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import { useRouter } from "next/navigation";
 import useSWR from "swr";
 
+import { getAuthToken } from "../../lib/auth";
 import Card from "../../components/ui/Card";
 import Badge from "../../components/ui/Badge";
 import Button from "../../components/ui/Button";
@@ -34,6 +36,13 @@ function storageKey(topicId: string) {
 }
 
 export default function EditorialIaPage() {
+  const router = useRouter();
+  useEffect(() => {
+    if (!getAuthToken()) {
+      router.replace("/login");
+    }
+  }, [router]);
+
   const { data: topicsData, isLoading: topicsLoading } = useSWR("topics:list", apiTopicsList, {
     refreshInterval: pollMs * 2,
   });

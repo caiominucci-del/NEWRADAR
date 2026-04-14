@@ -1,8 +1,10 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import { useRouter } from "next/navigation";
 import useSWR from "swr";
 
+import { getAuthToken } from "../../lib/auth";
 import Card from "../../components/ui/Card";
 import Badge from "../../components/ui/Badge";
 import Button from "../../components/ui/Button";
@@ -40,6 +42,13 @@ function buildSeoSuggestions({
 }
 
 export default function SeoBoosterPage() {
+  const router = useRouter();
+  useEffect(() => {
+    if (!getAuthToken()) {
+      router.replace("/login");
+    }
+  }, [router]);
+
   const [keyword, setKeyword] = useState("Bolsonaro");
   const [window, setWindow] = useState<"now 7-d" | "today 1-m" | "today 3-m">("today 3-m");
 

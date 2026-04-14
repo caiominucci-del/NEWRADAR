@@ -1,8 +1,10 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import { useRouter } from "next/navigation";
 import useSWR from "swr";
 
+import { getAuthToken } from "../../lib/auth";
 import Card from "../../components/ui/Card";
 import Badge from "../../components/ui/Badge";
 import Skeleton from "../../components/ui/Skeleton";
@@ -58,6 +60,13 @@ type OverlapVideo = {
 };
 
 export default function CompetitionPage() {
+  const router = useRouter();
+  useEffect(() => {
+    if (!getAuthToken()) {
+      router.replace("/login");
+    }
+  }, [router]);
+  
   const { data: topicsData, isLoading: topicsLoading } = useSWR("topics:list", apiTopicsList, {
     refreshInterval: pollMs * 2,
   });

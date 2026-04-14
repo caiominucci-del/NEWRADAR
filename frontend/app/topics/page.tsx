@@ -1,9 +1,11 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import { useRouter } from "next/navigation";
 import Link from "next/link";
 import useSWR from "swr";
 
+import { getAuthToken } from "../../lib/auth";
 import Card from "../../components/ui/Card";
 import Skeleton from "../../components/ui/Skeleton";
 import Badge from "../../components/ui/Badge";
@@ -22,6 +24,13 @@ function normalize(s: string) {
 }
 
 export default function TopicsPage() {
+  const router = useRouter();
+  useEffect(() => {
+    if (!getAuthToken()) {
+      router.replace("/login");
+    }
+  }, [router]);
+
   const { data, isLoading, error } = useSWR("topics:list", apiTopicsList, {
     refreshInterval: pollMs,
   });

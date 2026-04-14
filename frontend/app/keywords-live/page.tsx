@@ -1,8 +1,10 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import { useRouter } from "next/navigation";
 import useSWR from "swr";
 
+import { getAuthToken } from "../../lib/auth";
 import Card from "../../components/ui/Card";
 import Badge from "../../components/ui/Badge";
 import Button from "../../components/ui/Button";
@@ -82,6 +84,13 @@ function KeywordPanel({
 }
 
 export default function KeywordsLivePage() {
+  const router = useRouter();
+  useEffect(() => {
+    if (!getAuthToken()) {
+      router.replace("/login");
+    }
+  }, [router]);
+  
   const [window, setWindow] = useState<"now 7-d" | "today 1-m" | "today 3-m">("today 3-m");
   const [draft, setDraft] = useState("Bolsonaro, STF, Economia Brasil");
   const [keywords, setKeywords] = useState<string[]>(["Bolsonaro", "STF", "Economia Brasil"]);
