@@ -10,13 +10,20 @@ Funções públicas:
 
 from __future__ import annotations
 
+import asyncio
 import json
+import logging
 import re
 
 import httpx
 
 from app.core.cache import CacheStore
 from app.core.config import Settings
+
+logger = logging.getLogger("radar_bp.gemini")
+
+# Limita chamadas simultâneas ao Gemini para não explodir o rate limit (15 RPM free tier)
+_GEMINI_SEMAPHORE = asyncio.Semaphore(2)
 
 
 REQUIRED_FIELDS = ("angulo", "titulo", "gancho", "urgencia", "formatos", "por_que_agora")
@@ -125,58 +132,79 @@ async def _fetch_editorial(
         descricao=descricao,
     )
 
-    # Modelos em ordem de preferência (mais novo → mais antigo como fallback)
-    _MODELS = [
-        "gemini-2.0-flash",
-        "gemini-1.5-flash",
-        "gemini-1.5-flash-latest",
-    ]
+    _MODELS = ["gemini-2.0-flash", "gemini-1.5-flash", "gemini-1.5-flash-latest"]
 
     last_error: str = "erro desconhecido"
-    for model in _MODELS:
-        try:
-            url = (
-                "https://generativelanguage.googleapis.com/v1beta/models/"
-                f"{model}:generateContent?key={settings.gemini_api_key}"
-            )
-            async with httpx.AsyncClient(timeout=25) as client:
-                resp = await client.post(
-                    url,
-                    json={
-                        "contents": [{"parts": [{"text": prompt}]}],
-                        "generationConfig": {"temperature": 0.65, "maxOutputTokens": 600},
-                    },
+    async with _GEMINI_SEMAPHORE:
+        for model in _MODELS:
+            try:
+                url = (
+                    "https://generativelanguage.googleapis.com/v1beta/models/"
+                    f"{model}:generateContent?key={settings.gemini_api_key}"
                 )
-                resp.raise_for_status()
+                async with httpx.AsyncClient(timeout=25) as client:
+                    resp = await client.post(
+                        url,
+                        json={
+                            "contents": [{"parts": [{"text": prompt}]}],
+                            "generationConfig": {"temperature": 0.65, "maxOutputTokens": 600},
+                        },
+                    )
+                    resp.raise_for_status()
 
-            text = resp.json()["candidates"][0]["content"]["parts"][0]["text"]
-            text = re.sub(r"```(?:json)?\s*|\s*```", "", text).strip()
-            data = json.loads(text)
+                text = resp.json()["candidates"][0]["content"]["parts"][0]["text"]
+                text = re.sub(r"```(?:json)?\s*|\s*```", "", text).strip()
+                data = json.loads(text)
 
-            for field in REQUIRED_FIELDS:
-                if field not in data:
-                    raise ValueError(f"Campo ausente na resposta Gemini: {field}")
+                for field in REQUIRED_FIELDS:
+                    if field not in data:
+                        raise ValueError(f"Campo ausente na resposta Gemini: {field}")
 
-            return EditorialResult(
-                angulo=data["angulo"],
-                titulo=data["titulo"],
-                gancho=data["gancho"],
-                urgencia=data["urgencia"],
-                formatos=data["formatos"],
-                por_que_agora=data["por_que_agora"],
-                is_real=True,
-            )
-        except httpx.HTTPStatusError as e:
-            # 404 = modelo indisponível nessa key → tenta o próximo
-            if e.response.status_code == 404:
-                last_error = f"modelo '{model}' não disponível (404)"
-                continue
-            # Outros erros HTTP: sanitiza URL para não vazar a API key
-            safe_url = str(e.request.url).split("?")[0]
-            last_error = f"HTTP {e.response.status_code} em {safe_url}"
-            break
-        except Exception as e:
-            last_error = str(e)
-            break
+                return EditorialResult(
+                    angulo=data["angulo"],
+                    titulo=data["titulo"],
+                    gancho=data["gancho"],
+                    urgencia=data["urgencia"],
+                    formatos=data["formatos"],
+                    por_que_agora=data["por_que_agora"],
+                    is_real=True,
+                )
+            except httpx.HTTPStatusError as e:
+                if e.response.status_code == 404:
+                    last_error = f"modelo '{model}' não disponível (404)"
+                    continue
+                if e.response.status_code == 429:
+                    logger.warning("Gemini 429 (rate limit) no modelo '%s' — aguardando 10s", model)
+                    await asyncio.sleep(10)
+                    # tenta o mesmo modelo uma vez após backoff
+                    try:
+                        async with httpx.AsyncClient(timeout=25) as client:
+                            resp = await client.post(url, json={
+                                "contents": [{"parts": [{"text": prompt}]}],
+                                "generationConfig": {"temperature": 0.65, "maxOutputTokens": 600},
+                            })
+                            resp.raise_for_status()
+                        text = resp.json()["candidates"][0]["content"]["parts"][0]["text"]
+                        text = re.sub(r"```(?:json)?\s*|\s*```", "", text).strip()
+                        data = json.loads(text)
+                        for field in REQUIRED_FIELDS:
+                            if field not in data:
+                                raise ValueError(f"Campo ausente: {field}")
+                        return EditorialResult(
+                            angulo=data["angulo"], titulo=data["titulo"],
+                            gancho=data["gancho"], urgencia=data["urgencia"],
+                            formatos=data["formatos"], por_que_agora=data["por_que_agora"],
+                            is_real=True,
+                        )
+                    except Exception:
+                        pass
+                    last_error = "rate limit (429) — tente novamente em alguns minutos"
+                    break
+                safe_url = str(e.request.url).split("?")[0]
+                last_error = f"HTTP {e.response.status_code} em {safe_url}"
+                break
+            except Exception as e:
+                last_error = str(e)
+                break
 
     return EditorialResult.fallback(tema, reason=f"Erro na API Gemini: {last_error}")

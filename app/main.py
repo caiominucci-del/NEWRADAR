@@ -101,67 +101,71 @@ async def clear_cache(prefix: str = "", _user=Depends(require_admin)):
 
 @app.get("/health/apis", tags=["meta"])
 async def health_apis(_user=Depends(require_admin)):
-    """Testa as APIs externas e retorna diagnóstico detalhado."""
+    """Diagnóstico das APIs externas — sem consumir quota de geração."""
     import httpx
     s = get_settings()
     results: dict = {}
 
-    # ── Gemini ──────────────────────────────────────────────────────────────
-    gemini_models = ["gemini-2.0-flash", "gemini-1.5-flash", "gemini-1.5-flash-latest"]
+    # ── Gemini: lista modelos disponíveis (sem gerar conteúdo, sem quota) ──
     gemini_ok = False
-    gemini_model_used = None
+    gemini_models_available: list[str] = []
     gemini_error = None
     if s.gemini_api_key:
-        for model in gemini_models:
-            try:
-                async with httpx.AsyncClient(timeout=10) as client:
-                    resp = await client.post(
-                        f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={s.gemini_api_key}",
-                        json={"contents": [{"parts": [{"text": "Diga apenas: OK"}]}],
-                              "generationConfig": {"maxOutputTokens": 5}},
-                    )
-                    if resp.status_code == 200:
-                        gemini_ok = True
-                        gemini_model_used = model
-                        break
-                    elif resp.status_code == 404:
-                        continue
-                    else:
-                        gemini_error = f"HTTP {resp.status_code}: {resp.text[:150]}"
-                        break
-            except Exception as e:
-                gemini_error = str(e)
-                break
-        if not gemini_ok and not gemini_error:
-            gemini_error = "Nenhum modelo disponível (todos retornaram 404)"
+        try:
+            async with httpx.AsyncClient(timeout=10) as client:
+                resp = await client.get(
+                    f"https://generativelanguage.googleapis.com/v1beta/models?key={s.gemini_api_key}",
+                )
+            if resp.status_code == 200:
+                models = resp.json().get("models", [])
+                target = {"gemini-2.0-flash", "gemini-1.5-flash", "gemini-1.5-flash-latest"}
+                gemini_models_available = [
+                    m["name"].split("/")[-1]
+                    for m in models
+                    if m.get("name", "").split("/")[-1] in target
+                ]
+                gemini_ok = bool(gemini_models_available)
+                if not gemini_ok:
+                    gemini_error = "Nenhum modelo flash disponível para essa chave"
+            else:
+                gemini_error = f"HTTP {resp.status_code}: {resp.text[:200]}"
+        except Exception as e:
+            gemini_error = str(e)
     else:
         gemini_error = "GEMINI_API_KEY não configurada"
 
-    results["gemini"] = {"ok": gemini_ok, "model": gemini_model_used, "error": gemini_error}
+    results["gemini"] = {
+        "ok": gemini_ok,
+        "models_available": gemini_models_available,
+        "error": gemini_error,
+    }
 
-    # ── SerpAPI ─────────────────────────────────────────────────────────────
+    # ── SerpAPI: verifica quota restante sem fazer busca real ───────────────
     serpapi_ok = False
     serpapi_error = None
+    serpapi_info: dict = {}
     if s.serpapi_key:
         try:
             async with httpx.AsyncClient(timeout=10) as client:
                 resp = await client.get(
-                    "https://serpapi.com/search.json",
-                    params={"engine": "google_trends", "q": "Brasil", "data_type": "TIMESERIES",
-                            "date": "now 7-d", "geo": "BR", "hl": "pt", "api_key": s.serpapi_key},
+                    "https://serpapi.com/account",
+                    params={"api_key": s.serpapi_key},
                 )
-                if resp.status_code == 200:
-                    data = resp.json()
-                    serpapi_ok = bool(data.get("interest_over_time"))
-                    if not serpapi_ok:
-                        serpapi_error = "Resposta vazia (sem interest_over_time)"
-                else:
-                    serpapi_error = f"HTTP {resp.status_code}: {resp.text[:150]}"
+            if resp.status_code == 200:
+                data = resp.json()
+                serpapi_ok = True
+                serpapi_info = {
+                    "plan": data.get("plan_name"),
+                    "searches_this_month": data.get("this_month_usage"),
+                    "searches_limit": data.get("plan_searches_left"),
+                }
+            else:
+                serpapi_error = f"HTTP {resp.status_code}: {resp.text[:200]}"
         except Exception as e:
             serpapi_error = str(e)
     else:
         serpapi_error = "SERPAPI_KEY não configurada"
 
-    results["serpapi"] = {"ok": serpapi_ok, "error": serpapi_error}
+    results["serpapi"] = {"ok": serpapi_ok, "info": serpapi_info, "error": serpapi_error}
 
     return {"apis": results}
