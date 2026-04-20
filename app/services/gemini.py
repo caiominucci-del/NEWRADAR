@@ -125,38 +125,58 @@ async def _fetch_editorial(
         descricao=descricao,
     )
 
-    try:
-        url = (
-            "https://generativelanguage.googleapis.com/v1beta/models/"
-            f"gemini-pro:generateContent?key={settings.gemini_api_key}"
-        )
-        async with httpx.AsyncClient(timeout=20) as client:
-            resp = await client.post(
-                url,
-                json={
-                    "contents": [{"parts": [{"text": prompt}]}],
-                    "generationConfig": {"temperature": 0.65, "maxOutputTokens": 600},
-                },
+    # Modelos em ordem de preferência (mais novo → mais antigo como fallback)
+    _MODELS = [
+        "gemini-2.0-flash",
+        "gemini-1.5-flash",
+        "gemini-1.5-flash-latest",
+    ]
+
+    last_error: str = "erro desconhecido"
+    for model in _MODELS:
+        try:
+            url = (
+                "https://generativelanguage.googleapis.com/v1beta/models/"
+                f"{model}:generateContent?key={settings.gemini_api_key}"
             )
-            resp.raise_for_status()
+            async with httpx.AsyncClient(timeout=25) as client:
+                resp = await client.post(
+                    url,
+                    json={
+                        "contents": [{"parts": [{"text": prompt}]}],
+                        "generationConfig": {"temperature": 0.65, "maxOutputTokens": 600},
+                    },
+                )
+                resp.raise_for_status()
 
-        text = resp.json()["candidates"][0]["content"]["parts"][0]["text"]
-        text = re.sub(r"```(?:json)?\s*|\s*```", "", text).strip()
-        data = json.loads(text)
+            text = resp.json()["candidates"][0]["content"]["parts"][0]["text"]
+            text = re.sub(r"```(?:json)?\s*|\s*```", "", text).strip()
+            data = json.loads(text)
 
-        for field in REQUIRED_FIELDS:
-            if field not in data:
-                raise ValueError(f"Campo ausente na resposta Gemini: {field}")
+            for field in REQUIRED_FIELDS:
+                if field not in data:
+                    raise ValueError(f"Campo ausente na resposta Gemini: {field}")
 
-        return EditorialResult(
-            angulo=data["angulo"],
-            titulo=data["titulo"],
-            gancho=data["gancho"],
-            urgencia=data["urgencia"],
-            formatos=data["formatos"],
-            por_que_agora=data["por_que_agora"],
-            is_real=True,
-        )
+            return EditorialResult(
+                angulo=data["angulo"],
+                titulo=data["titulo"],
+                gancho=data["gancho"],
+                urgencia=data["urgencia"],
+                formatos=data["formatos"],
+                por_que_agora=data["por_que_agora"],
+                is_real=True,
+            )
+        except httpx.HTTPStatusError as e:
+            # 404 = modelo indisponível nessa key → tenta o próximo
+            if e.response.status_code == 404:
+                last_error = f"modelo '{model}' não disponível (404)"
+                continue
+            # Outros erros HTTP: sanitiza URL para não vazar a API key
+            safe_url = str(e.request.url).split("?")[0]
+            last_error = f"HTTP {e.response.status_code} em {safe_url}"
+            break
+        except Exception as e:
+            last_error = str(e)
+            break
 
-    except Exception as e:
-        return EditorialResult.fallback(tema, reason=f"Erro na API Gemini: {e}")
+    return EditorialResult.fallback(tema, reason=f"Erro na API Gemini: {last_error}")

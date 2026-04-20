@@ -9,6 +9,7 @@ Funções públicas:
 
 from __future__ import annotations
 
+import logging
 import re
 from datetime import datetime
 from typing import Literal
@@ -18,6 +19,8 @@ import numpy as np
 
 from app.core.cache import CacheStore
 from app.core.config import Settings
+
+logger = logging.getLogger("radar_bp.trends")
 
 # ── Tipos de retorno ──────────────────────────────────────────────────────────
 
@@ -142,7 +145,12 @@ async def _fetch_interest(keyword: str, window: Window, settings: Settings) -> I
 
         return InterestResult(points, peak, is_real=True)
 
-    except Exception:
+    except httpx.HTTPStatusError as e:
+        logger.warning("SerpAPI HTTP %s para keyword='%s': %s", e.response.status_code, keyword, e.response.text[:200])
+        points = _fallback_curve(keyword)
+        return InterestResult(points, max(p["value"] for p in points), is_real=False)
+    except Exception as e:
+        logger.warning("SerpAPI erro para keyword='%s': %s", keyword, e)
         points = _fallback_curve(keyword)
         return InterestResult(points, max(p["value"] for p in points), is_real=False)
 
@@ -195,7 +203,11 @@ async def _fetch_related(keyword: str, settings: Settings) -> RelatedResult:
 
         return RelatedResult([], "", is_real=False)
 
-    except Exception:
+    except httpx.HTTPStatusError as e:
+        logger.warning("SerpAPI related HTTP %s para keyword='%s': %s", e.response.status_code, keyword, e.response.text[:200])
+        return RelatedResult([], "", is_real=False)
+    except Exception as e:
+        logger.warning("SerpAPI related erro para keyword='%s': %s", keyword, e)
         return RelatedResult([], "", is_real=False)
 
 
