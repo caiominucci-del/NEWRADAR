@@ -1,10 +1,7 @@
 "use client";
 
-import { useEffect } from "react";
-import { useRouter } from "next/navigation";
 import useSWR from "swr";
 
-import { getAuthToken } from "../lib/auth";
 import Card from "../components/ui/Card";
 import IsRealBadge from "../components/IsRealBadge";
 import { apiCompetitionGaps, apiTrendsMacro, apiTopicsList } from "../lib/api";
@@ -15,12 +12,6 @@ import Badge from "../components/ui/Badge";
 const pollMs = 60_000;
 
 export default function DashboardPage() {
-  const router = useRouter();
-  useEffect(() => {
-    if (!getAuthToken()) {
-      router.replace("/login");
-    }
-  }, [router]);
 
   const { data: macro, isLoading: macroLoading, error: macroError } = useSWR("trends:macro", apiTrendsMacro, {
     refreshInterval: pollMs,
