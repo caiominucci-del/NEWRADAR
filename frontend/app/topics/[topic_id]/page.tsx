@@ -166,14 +166,11 @@ export default function TopicDetailPage() {
         </div>
 
         <div className="flex flex-wrap gap-2 justify-end">
-          <Button variant="secondary" onClick={() => onRefazer()}>
-            Refazer IA
-          </Button>
           <Button variant="primary" onClick={() => onSalvarBriefingLocal()}>
-            Salvar rascunho
+            Salvar
           </Button>
-          <Button variant="secondary" onClick={() => onSalvarServidor()}>
-            Salvar servidor
+          <Button variant="secondary" onClick={() => onRefazer()}>
+            Atualizar análise
           </Button>
         </div>
       </div>
@@ -197,8 +194,8 @@ export default function TopicDetailPage() {
             )}
           </div>
           <div className="mt-3 flex items-center gap-2">
-            {topic.trend.is_real && <Badge tone="neutral">peak {topic.trend.peak}</Badge>}
-            <Badge tone="neutral">{topic.news.items.length} news</Badge>
+            {topic.trend.is_real && <Badge tone="neutral">Interesse máximo: {topic.trend.peak}/100</Badge>}
+            <Badge tone="neutral">{topic.news.items.length} notícias</Badge>
           </div>
         </Card>
 
@@ -329,29 +326,20 @@ export default function TopicDetailPage() {
             </label>
 
             <div className="flex gap-2 flex-wrap">
-              <Button variant="secondary" onClick={() => onSalvarBriefingLocal()}>
+              <Button variant="primary" onClick={() => onSalvarBriefingLocal()}>
                 Salvar
               </Button>
-              <Button variant="secondary" onClick={() => onCarregarServidor()}>
-                Carregar servidor
-              </Button>
               <Button variant="secondary" onClick={() => onSalvarServidor()}>
-                Salvar servidor
+                Salvar no servidor
               </Button>
-              <Button
-                variant="ghost"
-                onClick={async () => {
-                  const json = JSON.stringify(draft, null, 2);
-                  await navigator.clipboard.writeText(json);
-                }}
-              >
-                Copiar JSON
+              <Button variant="secondary" onClick={() => onCarregarServidor()}>
+                Carregar salvo
               </Button>
               <Button variant="ghost" onClick={() => onExport("json")}>
-                Export JSON
+                Exportar JSON
               </Button>
               <Button variant="ghost" onClick={() => onExport("csv")}>
-                Export CSV
+                Exportar CSV
               </Button>
             </div>
           </div>

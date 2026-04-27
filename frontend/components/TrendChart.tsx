@@ -41,6 +41,8 @@ export default function TrendChart({
             stroke="rgba(255,255,255,0.65)"
             tick={{ fontSize: 12 }}
             allowDecimals={false}
+            domain={[0, 100]}
+            label={{ value: "Interesse", angle: -90, position: "insideLeft", offset: 10, style: { fill: "rgba(255,255,255,0.45)", fontSize: 11 } }}
           />
           <Tooltip
             contentStyle={{
@@ -48,8 +50,8 @@ export default function TrendChart({
               border: "1px solid rgba(148,163,184,0.25)",
               borderRadius: 12,
             }}
-            formatter={(value: any, name: any) => [value, "Valor"]}
-            labelFormatter={(label: any) => String(label)}
+            formatter={(value: any) => [value, "Interesse (0–100)"]}
+            labelFormatter={(label: any) => `Data: ${String(label)}`}
           />
           <Line
             type="monotone"

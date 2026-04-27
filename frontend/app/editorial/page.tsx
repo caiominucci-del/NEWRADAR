@@ -6,7 +6,6 @@ import Card from "../../components/ui/Card";
 import Badge from "../../components/ui/Badge";
 import Button from "../../components/ui/Button";
 import Skeleton from "../../components/ui/Skeleton";
-import IsRealBadge from "../../components/IsRealBadge";
 import type { EditorialResponse } from "../../lib/types";
 import {
   apiClearCache,
@@ -164,15 +163,12 @@ export default function EditorialIaPage() {
           </div>
         </div>
         <div className="flex flex-wrap gap-2 justify-end">
-          <Badge tone="info">Score {topic.score}</Badge>
-          <Button variant="secondary" onClick={onRefazer}>
-            Refazer IA
-          </Button>
+          <Badge tone="info">Oportunidade: {topic.score}/100</Badge>
           <Button variant="primary" onClick={onSalvarLocal}>
-            Salvar rascunho
+            Salvar
           </Button>
-          <Button variant="secondary" onClick={onSalvarServidor}>
-            Salvar servidor
+          <Button variant="secondary" onClick={onRefazer}>
+            Atualizar análise
           </Button>
         </div>
       </div>
@@ -204,10 +200,11 @@ export default function EditorialIaPage() {
                     </div>
                     <Badge tone="neutral">{t.score}</Badge>
                   </div>
-                  <div className="mt-2 flex items-center gap-2">
-                    <Badge tone="neutral">peak {t.trend.peak}</Badge>
-                    <IsRealBadge isReal={t.trend.is_real} />
-                  </div>
+                  {t.trend.peak > 0 && (
+                    <div className="mt-2">
+                      <Badge tone="neutral">Interesse: {t.trend.peak}/100</Badge>
+                    </div>
+                  )}
                 </button>
               ))}
             </div>
@@ -221,7 +218,9 @@ export default function EditorialIaPage() {
                 <span className="text-2xl">{topic.emoji}</span>
                 <span>{topic.tema}</span>
               </div>
-              <IsRealBadge isReal={topic.editorial.is_real} />
+              {!topic.editorial.is_real && (
+                <span className="text-xs text-amber-400/80">Aguardando análise da IA (próxima atualização: 07h)</span>
+              )}
             </div>
 
             <div className="mt-3 flex flex-wrap gap-2">
@@ -288,28 +287,21 @@ export default function EditorialIaPage() {
             </div>
 
             <div className="mt-4 flex flex-wrap items-center gap-2">
-              <Button variant="secondary" onClick={onCarregarServidor}>
-                Carregar servidor
+              <Button variant="primary" onClick={onSalvarLocal}>
+                Salvar
               </Button>
               <Button variant="secondary" onClick={onSalvarServidor}>
-                Salvar servidor
+                Salvar no servidor
               </Button>
-              <Button
-                variant="ghost"
-                onClick={async () => {
-                  const json = JSON.stringify(draft, null, 2);
-                  await navigator.clipboard.writeText(json);
-                }}
-              >
-                Copiar JSON
+              <Button variant="secondary" onClick={onCarregarServidor}>
+                Carregar salvo
               </Button>
               <Button variant="ghost" onClick={() => onExport("json")}>
-                Export JSON
+                Exportar JSON
               </Button>
               <Button variant="ghost" onClick={() => onExport("csv")}>
-                Export CSV
+                Exportar CSV
               </Button>
-              <Badge tone="neutral">is_real: {String(draft.is_real)}</Badge>
             </div>
           </Card>
         </div>

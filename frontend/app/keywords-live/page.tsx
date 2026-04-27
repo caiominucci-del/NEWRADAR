@@ -69,8 +69,7 @@ function KeywordPanel({
         ) : (
           <div className="space-y-3">
             <div className="flex items-center gap-2 flex-wrap">
-              <Badge tone="neutral">peak {data.peak}</Badge>
-              <Badge tone="info">{data.points.length} pontos</Badge>
+              <Badge tone="neutral">Interesse máximo: {data.peak}/100</Badge>
             </div>
             <TrendChart points={data.points} height={220} />
           </div>
@@ -104,8 +103,7 @@ export default function KeywordsLivePage() {
           </div>
         </div>
         <div className="flex items-center gap-3 flex-wrap">
-          <Badge tone="info">Poll: 15m</Badge>
-          <Badge tone="neutral">REST / JSON</Badge>
+          <Badge tone="neutral">Atualizado a cada 30min</Badge>
         </div>
       </div>
 

@@ -7,7 +7,6 @@ import useSWR from "swr";
 import Card from "../../components/ui/Card";
 import Skeleton from "../../components/ui/Skeleton";
 import Badge from "../../components/ui/Badge";
-import IsRealBadge from "../../components/IsRealBadge";
 import type { TopicSummaryResponse } from "../../lib/types";
 import { apiTopicsList } from "../../lib/api";
 
@@ -55,9 +54,7 @@ export default function TopicsPage() {
           <div className="text-sm text-slate-300/80 mt-1">Ordenado por oportunidade calculada.</div>
         </div>
         <div className="flex items-center gap-2">
-          <div className="hidden md:flex">
-            <Badge tone="info">Live</Badge>
-          </div>
+          <Badge tone="neutral" className="hidden md:flex">Atualizado diariamente às 07h</Badge>
         </div>
       </div>
 
@@ -113,9 +110,9 @@ export default function TopicsPage() {
                 <tr className="text-left text-slate-300/80">
                   <th className="py-2 pr-3">Tema</th>
                   <th className="py-2 pr-3">Categoria</th>
-                  <th className="py-2 pr-3">Trend</th>
-                  <th className="py-2 pr-3">News</th>
-                  <th className="py-2 pr-3">Score</th>
+                  <th className="py-2 pr-3">Interesse (0–100)</th>
+                  <th className="py-2 pr-3">Notícias</th>
+                  <th className="py-2 pr-3">Oportunidade</th>
                 </tr>
               </thead>
               <tbody>
@@ -143,15 +140,15 @@ export default function TopicsPage() {
                     <td className="py-3 pr-3 text-slate-200/90">{t.categoria}</td>
                     <td className="py-3 pr-3">
                       <div className="flex items-center gap-2">
-                        <Badge tone="neutral">peak {t.trend.peak}</Badge>
-                        <IsRealBadge isReal={t.trend.is_real} />
+                        {t.trend.is_real ? (
+                          <Badge tone="neutral">{t.trend.peak}/100</Badge>
+                        ) : (
+                          <span className="text-xs text-slate-500">–</span>
+                        )}
                       </div>
                     </td>
                     <td className="py-3 pr-3">
-                      <div className="flex items-center gap-2">
-                        <Badge tone="neutral">{t.news.count} itens</Badge>
-                        <IsRealBadge isReal={t.news.is_real} />
-                      </div>
+                      <Badge tone="neutral">{t.news.count} notícias</Badge>
                     </td>
                     <td className="py-3 pr-3">
                       <div className="font-bold text-indigo-100">{t.score}</div>

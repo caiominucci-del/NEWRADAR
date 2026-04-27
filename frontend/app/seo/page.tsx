@@ -6,7 +6,6 @@ import Card from "../../components/ui/Card";
 import Badge from "../../components/ui/Badge";
 import Button from "../../components/ui/Button";
 import Skeleton from "../../components/ui/Skeleton";
-import IsRealBadge from "../../components/IsRealBadge";
 import TrendChart from "../../components/TrendChart";
 import type { TrendInterestResponse, TrendRelatedResponse } from "../../lib/types";
 import { apiTrendsInterest, apiTrendsRelated } from "../../lib/api";
@@ -68,8 +67,7 @@ export default function SeoBoosterPage() {
           </div>
         </div>
         <div className="flex items-center gap-2 flex-wrap justify-end">
-          <Badge tone="neutral">REST / JSON</Badge>
-          <Badge tone="info">Poll: 5m</Badge>
+          <Badge tone="neutral">Atualizado a cada 30min</Badge>
         </div>
       </div>
 
@@ -119,8 +117,10 @@ export default function SeoBoosterPage() {
       <div className="grid grid-cols-1 xl:grid-cols-3 gap-4">
         <Card className="p-4 glass xl:col-span-2">
           <div className="flex items-center justify-between gap-3">
-            <div className="font-semibold">Interest ({window})</div>
-            {interest ? <IsRealBadge isReal={interest.is_real} /> : null}
+            <div className="font-semibold">Interesse ao longo do tempo ({window})</div>
+            {interest && !interest.is_real && (
+              <span className="text-xs text-amber-400/80">Aguardando atualização (07h)</span>
+            )}
           </div>
 
           <div className="mt-3">
@@ -136,9 +136,9 @@ export default function SeoBoosterPage() {
 
           {interest ? (
             <div className="mt-3 flex items-center gap-2 flex-wrap">
-              <Badge tone="neutral">peak {interest.peak}</Badge>
+              <Badge tone="neutral">Interesse máximo: {interest.peak}/100</Badge>
               <Badge tone={interest.peak >= 70 ? "danger" : interest.peak >= 40 ? "warning" : "neutral"}>
-                urgência {suggestions.urgency}
+                Urgência: {suggestions.urgency}
               </Badge>
             </div>
           ) : null}
@@ -146,12 +146,14 @@ export default function SeoBoosterPage() {
 
         <Card className="p-4 glass">
           <div className="flex items-center justify-between gap-3">
-            <div className="font-semibold">Related queries</div>
-            {related ? <IsRealBadge isReal={related.is_real} /> : null}
+            <div className="font-semibold">Buscas relacionadas</div>
+            {related && !related.is_real && (
+              <span className="text-xs text-amber-400/80">Aguardando</span>
+            )}
           </div>
 
           <div className="mt-2 text-xs text-slate-300/80">
-            Tipo: <b className="text-slate-100">{related?.kind || "-"}</b>
+            Tipo de consulta: <b className="text-slate-100">{related?.kind === "rising" ? "Em alta" : related?.kind === "top" ? "Mais buscadas" : "-"}</b>
           </div>
 
           <div className="mt-3 space-y-2 max-h-[360px] overflow-auto pr-1">
@@ -183,8 +185,7 @@ export default function SeoBoosterPage() {
 
       <Card className="p-4 glass">
         <div className="flex items-center justify-between gap-3">
-          <div className="font-semibold">Sugestões SEO (heurísticas)</div>
-          <Badge tone="neutral">editável manualmente</Badge>
+          <div className="font-semibold">Sugestões para título e descrição</div>
         </div>
 
         <div className="mt-4 grid grid-cols-1 md:grid-cols-3 gap-3">

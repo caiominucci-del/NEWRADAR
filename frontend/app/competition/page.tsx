@@ -5,7 +5,6 @@ import useSWR from "swr";
 import Card from "../../components/ui/Card";
 import Badge from "../../components/ui/Badge";
 import Skeleton from "../../components/ui/Skeleton";
-import IsRealBadge from "../../components/IsRealBadge";
 import type { CompetitionChannel, TopicSummaryResponse } from "../../lib/types";
 import { apiCompetitionChannels, apiCompetitionGaps, apiTopicsList, apiTrendsRelated } from "../../lib/api";
 
@@ -135,11 +134,8 @@ export default function CompetitionPage() {
         <div>
           <div className="text-2xl font-bold">Concorrência</div>
           <div className="text-sm text-slate-300/80 mt-1">
-            Vídeos + Overlap por palavras-chave do tema selecionado.
+            O que os canais concorrentes estão publicando sobre cada tema.
           </div>
-        </div>
-        <div className="flex flex-wrap gap-2 justify-end">
-          <Badge tone="info">Topic peak: {trendPeak}</Badge>
         </div>
       </div>
 
@@ -160,9 +156,12 @@ export default function CompetitionPage() {
             </select>
           </label>
           <div className="flex items-center gap-2 text-sm text-slate-200/90 md:justify-start md:col-span-2">
-            <Badge tone="neutral">{keywords.length} keywords</Badge>
-            {relatedData?.items?.length ? <Badge tone="info">+ SEO relacionadas</Badge> : null}
-            {selectedTopic ? <IsRealBadge isReal={selectedTopic.trend.is_real} /> : null}
+            <Badge tone="neutral">{keywords.length} palavras-chave monitoradas</Badge>
+            {trendPeak > 0 && (
+              <Badge tone={trendPeak >= 70 ? "warning" : "neutral"}>
+                Interesse máximo: {trendPeak}/100
+              </Badge>
+            )}
           </div>
         </div>
       </Card>
@@ -170,9 +169,14 @@ export default function CompetitionPage() {
       <div className="grid grid-cols-1 xl:grid-cols-3 gap-4">
         <div className="xl:col-span-2 flex flex-col gap-4">
           <Card className="p-4 glass">
-            <div className="flex items-center justify-between gap-3">
-              <div className="font-semibold">Heatmap de overlap (canal x keyword)</div>
-              <Badge tone="neutral">Heurística em título</Badge>
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <div className="font-semibold">Menções ao tema por canal</div>
+                <div className="text-xs text-slate-400 mt-1">
+                  Quantas vezes cada canal abordou a palavra-chave nos últimos vídeos.
+                  <span className="ml-1 text-emerald-400">0 = lacuna editorial — oportunidade para você.</span>
+                </div>
+              </div>
             </div>
             <div className="mt-3 overflow-auto">
               <table className="min-w-[920px] w-full text-xs">
@@ -197,14 +201,17 @@ export default function CompetitionPage() {
                           )
                         ).length;
                         const intensity = Math.min(1, hitCount / Math.max(1, ch._videosWithOverlap.length));
-                        const bg = `rgba(99,102,241,${0.12 + intensity * 0.5})`;
+                        const bg = hitCount === 0
+                          ? "rgba(16,185,129,0.08)"
+                          : `rgba(99,102,241,${0.15 + intensity * 0.55})`;
                         return (
                           <td key={`${ch.nome}-${kw}`} className="py-2 pr-3">
                             <div
                               className="rounded-lg border border-white/10 px-2 py-1 text-center"
                               style={{ background: bg }}
+                              title={hitCount === 0 ? "Tema não abordado — oportunidade" : `${hitCount} vídeo(s) com essa palavra`}
                             >
-                              {hitCount}
+                              {hitCount === 0 ? "–" : hitCount}
                             </div>
                           </td>
                         );
@@ -253,7 +260,7 @@ export default function CompetitionPage() {
                         <div className="text-sm font-bold text-indigo-100">
                           {v.overlap_percent}%
                         </div>
-                        <div className="text-[11px] text-slate-400">overlap</div>
+                        <div className="text-[11px] text-slate-400">coincidência</div>
                       </div>
                     </div>
 
@@ -274,16 +281,14 @@ export default function CompetitionPage() {
                       </div>
                     )}
 
-                    {/* sugestão visual: quando overlap alto, compete diretamente; quando baixo, pode diferenciar */}
                     <div className="mt-3 flex items-center gap-2">
                       {v.overlap_percent >= 50 ? (
-                        <Badge tone="warning">Alta competição</Badge>
+                        <Badge tone="warning">Concorrência direta — diferencie o ângulo</Badge>
+                      ) : v.overlap_percent > 0 ? (
+                        <Badge tone="success">Pouca concorrência — bom ângulo</Badge>
                       ) : (
-                        <Badge tone="success">Boa diferenciação</Badge>
+                        <Badge tone="success">Lacuna — tema não abordado</Badge>
                       )}
-                      {ch.videos.is_real ? (
-                        <Badge tone="info">is_real</Badge>
-                      ) : null}
                     </div>
                   </div>
                 ))}
@@ -294,11 +299,11 @@ export default function CompetitionPage() {
 
         <div className="flex flex-col gap-4">
           <Card className="p-4 glass">
-            <div className="flex items-center justify-between gap-3">
-              <div className="font-semibold">Ranking competitivo</div>
-              <Badge tone="neutral">avg overlap</Badge>
+            <div className="font-semibold">Atividade dos concorrentes</div>
+            <div className="text-xs text-slate-400 mt-1 mb-3">
+              Coincidência média com o tema selecionado.
             </div>
-            <div className="mt-3 space-y-2">
+            <div className="space-y-2">
               {channelRanking.map((ch) => (
                 <div
                   key={ch.nome}
@@ -306,12 +311,12 @@ export default function CompetitionPage() {
                 >
                   <div className="min-w-0">
                     <div className="font-semibold truncate">{ch.nome}</div>
-                    <div className="text-xs text-slate-400">{ch.count} videos</div>
+                    <div className="text-xs text-slate-400">{ch.count} vídeos recentes</div>
                   </div>
                   <div className="text-right">
                     <div className="font-bold text-indigo-100">{ch.avgOverlap}%</div>
                     <div className="text-[11px] text-slate-400">
-                      {ch.avgOverlap >= 50 ? "copiar promessa" : "diferenciar ângulo"}
+                      {ch.avgOverlap >= 50 ? "abordagem similar" : ch.avgOverlap > 0 ? "baixa sobreposição" : "sem abordagem"}
                     </div>
                   </div>
                 </div>
@@ -342,11 +347,12 @@ export default function CompetitionPage() {
             </div>
           </Card>
 
-          <Card className="p-4 glass">
-            <div className="font-semibold">Como usar</div>
-            <div className="mt-2 text-sm text-slate-300/80 leading-relaxed">
-              Se o overlap do concorrente é alto, você tende a competir por “mesma promessa”.
-              Quando o overlap é baixo, há chance de fazer uma abordagem mais original (ângulo, formato e gancho).
+          <Card className=”p-4 glass”>
+            <div className=”font-semibold”>Como interpretar</div>
+            <div className=”mt-2 text-sm text-slate-300/80 leading-relaxed space-y-2”>
+              <p><span className=”text-emerald-400 font-semibold”>0% ou “–“</span> → o concorrente não abordou o tema recentemente. Isso é uma <span className=”text-emerald-300”>oportunidade editorial</span> para você.</p>
+              <p><span className=”text-amber-300 font-semibold”>Acima de 50%</span> → concorrência direta. Vale diferenciar no ângulo, formato ou ponto de vista.</p>
+              <p>A análise compara o título dos vídeos com as palavras-chave do tema selecionado.</p>
             </div>
           </Card>
         </div>
