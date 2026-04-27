@@ -183,13 +183,21 @@ export default function TopicDetailPage() {
         <Card className="p-4 glass xl:col-span-1">
           <div className="flex items-center justify-between">
             <div className="font-semibold">Trend (SerpAPI)</div>
-            <IsRealBadge isReal={topic.trend.is_real} />
+            <IsRealBadge isReal={topic.trend.is_real} pending={!topic.trend.is_real} />
           </div>
           <div className="mt-3">
-            <TrendChart points={topic.trend.points} height={240} />
+            {topic.trend.is_real && topic.trend.points?.length > 0 ? (
+              <TrendChart points={topic.trend.points} height={240} />
+            ) : (
+              <div className="flex flex-col items-center justify-center h-[240px] gap-3 text-center text-slate-400">
+                <div className="text-3xl opacity-40">📡</div>
+                <div className="text-sm">Dados de tendência indisponíveis.</div>
+                <div className="text-xs text-slate-500">Próxima atualização: 07h (diário)</div>
+              </div>
+            )}
           </div>
           <div className="mt-3 flex items-center gap-2">
-            <Badge tone="neutral">peak {topic.trend.peak}</Badge>
+            {topic.trend.is_real && <Badge tone="neutral">peak {topic.trend.peak}</Badge>}
             <Badge tone="neutral">{topic.news.items.length} news</Badge>
           </div>
         </Card>
@@ -237,35 +245,45 @@ export default function TopicDetailPage() {
       <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
         <Card className="p-4 glass">
           <div className="flex items-center justify-between">
-            <div className="font-semibold">Editorial IA (resultado)</div>
-            <IsRealBadge isReal={topic.editorial.is_real} />
+            <div className="font-semibold">Editorial IA</div>
+            <IsRealBadge isReal={topic.editorial.is_real} pending={(topic.editorial as any).pending} />
           </div>
-          <div className="mt-3 space-y-3">
-            <div>
-              <div className="text-xs text-slate-300/80">Título</div>
-              <div className="mt-1 text-sm font-semibold">{draft.titulo}</div>
-            </div>
-            <div>
-              <div className="text-xs text-slate-300/80">Gancho</div>
-              <div className="mt-1 text-sm">{draft.gancho}</div>
-            </div>
-            <div>
-              <div className="text-xs text-slate-300/80">Ângulo</div>
-              <div className="mt-1 text-sm leading-relaxed whitespace-pre-wrap">{draft.angulo}</div>
-            </div>
-            <div>
-              <div className="text-xs text-slate-300/80">Por que agora</div>
-              <div className="mt-1 text-sm">{draft.por_que_agora}</div>
-            </div>
-            <div>
-              <div className="text-xs text-slate-300/80">Urgência</div>
-              <div className="mt-1">
-                <Badge tone={draft.urgencia.toLowerCase().includes("alta") ? "danger" : "warning"}>
-                  {draft.urgencia}
-                </Badge>
+          {(topic.editorial as any).pending || !topic.editorial.is_real ? (
+            <div className="flex flex-col items-center justify-center py-10 gap-3 text-center text-slate-400">
+              <div className="text-3xl opacity-40">🤖</div>
+              <div className="text-sm">Análise ainda não realizada.</div>
+              <div className="text-xs text-slate-500">
+                A IA analisa automaticamente após cada atualização diária (07h).
               </div>
             </div>
-          </div>
+          ) : (
+            <div className="mt-3 space-y-3">
+              <div>
+                <div className="text-xs text-slate-300/80">Título</div>
+                <div className="mt-1 text-sm font-semibold">{draft.titulo}</div>
+              </div>
+              <div>
+                <div className="text-xs text-slate-300/80">Gancho</div>
+                <div className="mt-1 text-sm">{draft.gancho}</div>
+              </div>
+              <div>
+                <div className="text-xs text-slate-300/80">Ângulo</div>
+                <div className="mt-1 text-sm leading-relaxed whitespace-pre-wrap">{draft.angulo}</div>
+              </div>
+              <div>
+                <div className="text-xs text-slate-300/80">Por que agora</div>
+                <div className="mt-1 text-sm">{draft.por_que_agora}</div>
+              </div>
+              <div>
+                <div className="text-xs text-slate-300/80">Urgência</div>
+                <div className="mt-1">
+                  <Badge tone={draft.urgencia?.toLowerCase().includes("alta") ? "danger" : "warning"}>
+                    {draft.urgencia}
+                  </Badge>
+                </div>
+              </div>
+            </div>
+          )}
         </Card>
 
         <Card className="p-4 glass">

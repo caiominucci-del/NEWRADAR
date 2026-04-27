@@ -14,7 +14,7 @@ class Settings(BaseSettings):
     gemini_api_key: str = ""
     serpapi_key: str = ""
 
-    # Auth simplificada (troque em produção)
+    # Auth
     admin_user: str = "admin"
     admin_password: str = "1234"
     auth_secret_key: str = "change-this-secret-in-production"
@@ -24,13 +24,14 @@ class Settings(BaseSettings):
     cache_db_path: str = "radar_cache.db"
 
     # TTLs em segundos
-    ttl_trends: int = 1800       # 30min — dados mudam rápido
-    ttl_news: int = 1800         # 30min
-    ttl_youtube: int = 3600      # 1h
-    ttl_editorial: int = 7200    # 2h — Gemini é caro, cache longo
-    ttl_macro: int = 1800        # 30min
+    # Trends e editorial: 24h — dados são atualizados 1x/dia pelo job agendado
+    ttl_trends: int = 86_400       # 24h
+    ttl_news: int = 3_600          # 1h  — RSS é grátis, pode ser mais frequente
+    ttl_youtube: int = 3_600       # 1h
+    ttl_editorial: int = 86_400    # 24h
+    ttl_macro: int = 1_800         # 30min — RSS do Google Trends, sem custo
 
-    # CORS — adicione o domínio do seu frontend Vercel aqui
+    # CORS
     allowed_origins: list[str] = [
         "http://localhost:3000",
         "http://localhost:5173",

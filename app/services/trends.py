@@ -1,10 +1,15 @@
 """
-Serviço de Trends — SerpAPI Google Trends + fallback determinístico.
+Serviço de Trends — SerpAPI Google Trends.
 
-Funções públicas:
-    get_interest_over_time(keyword, window, cache, settings) → InterestResult
-    get_related_queries(keyword, cache, settings)           → RelatedResult
-    get_macro_trends(cache, settings)                       → MacroResult
+Regras de acesso à API (proteção de quota):
+  - get_interest_over_time / get_related_queries  → leitura de cache APENAS.
+    Se não há cache, retornam InterestResult/RelatedResult vazio (is_real=False).
+    NUNCA chamam SerpAPI em fluxo on-demand.
+  - refresh_interest / refresh_related             → chamados EXCLUSIVAMENTE
+    pelo endpoint POST /refresh (job agendado). Consultam SerpAPI, salvam cache.
+
+Isso garante que o limite de 100 buscas/mês do free tier só é consumido
+pelo job diário agendado, nunca por navegação do usuário.
 """
 
 from __future__ import annotations
@@ -15,21 +20,20 @@ from datetime import datetime
 from typing import Literal
 
 import httpx
-import numpy as np
 
 from app.core.cache import CacheStore
 from app.core.config import Settings
 
 logger = logging.getLogger("radar_bp.trends")
 
-# ── Tipos de retorno ──────────────────────────────────────────────────────────
-
 Window = Literal["now 7-d", "today 1-m", "today 3-m"]
 
 
+# ── Tipos de retorno ──────────────────────────────────────────────────────────
+
 class InterestResult:
     def __init__(self, points: list[dict], peak: int, is_real: bool):
-        self.points = points   # [{"date": "YYYY-MM-DD", "value": int}, ...]
+        self.points = points
         self.peak = peak
         self.is_real = is_real
 
@@ -39,8 +43,8 @@ class InterestResult:
 
 class RelatedResult:
     def __init__(self, items: list[dict], kind: str, is_real: bool):
-        self.items = items     # [{"query": str, "value": int}, ...]
-        self.kind = kind       # "rising" | "top" | ""
+        self.items = items
+        self.kind = kind
         self.is_real = is_real
 
     def to_dict(self):
@@ -74,23 +78,7 @@ def _parse_serp_date(date_str: str) -> str:
     return datetime.today().strftime("%Y-%m-%d")
 
 
-def _fallback_curve(keyword: str, n: int = 13) -> list[dict]:
-    """Curva estimada reproduzível para o mesmo keyword. Marcada como is_real=False."""
-    seed = abs(hash(keyword)) % 9_999
-    rng = np.random.default_rng(seed)
-    base = 35 + (seed % 35)
-    raw = base + np.cumsum(rng.standard_normal(n) * 7)
-    vals = [max(5, min(100, int(v))) for v in raw]
-    dates = [
-        datetime.fromtimestamp(
-            datetime.today().timestamp() - (n - 1 - i) * 7 * 86400
-        ).strftime("%Y-%m-%d")
-        for i in range(n)
-    ]
-    return [{"date": d, "value": v} for d, v in zip(dates, vals)]
-
-
-# ── Funções públicas ──────────────────────────────────────────────────────────
+# ── Leitura de cache (on-demand, NUNCA chama SerpAPI) ─────────────────────────
 
 async def get_interest_over_time(
     keyword: str,
@@ -98,24 +86,54 @@ async def get_interest_over_time(
     cache: CacheStore,
     settings: Settings,
 ) -> InterestResult:
-    cache_key = f"trends:interest:{keyword}:{window}"
-    hit = await cache.get(cache_key)
+    """Lê do cache. Se ausente, retorna vazio — NÃO chama SerpAPI."""
+    hit = await cache.get(f"trends:interest:{keyword}:{window}")
     if hit:
         d = hit["data"]
         return InterestResult(d["points"], d["peak"], hit["is_real"])
+    return InterestResult([], 0, is_real=False)
 
-    result = await _fetch_interest(keyword, window, settings)
-    await cache.set(cache_key, result.to_dict(), is_real=result.is_real, ttl=settings.ttl_trends)
+
+async def get_related_queries(
+    keyword: str,
+    cache: CacheStore,
+    settings: Settings,
+) -> RelatedResult:
+    """Lê do cache. Se ausente, retorna vazio — NÃO chama SerpAPI."""
+    hit = await cache.get(f"trends:related:{keyword}")
+    if hit:
+        d = hit["data"]
+        return RelatedResult(d["items"], d["kind"], hit["is_real"])
+    return RelatedResult([], "", is_real=False)
+
+
+async def get_macro_trends(cache: CacheStore, settings: Settings) -> MacroResult:
+    """Macro trends via RSS do Google Trends (gratuito, sem key)."""
+    cache_key = "trends:macro:BR"
+    hit = await cache.get(cache_key)
+    if hit:
+        return MacroResult(hit["data"]["topics"], hit["is_real"])
+
+    result = await _fetch_macro()
+    await cache.set(cache_key, result.to_dict(), is_real=result.is_real, ttl=settings.ttl_macro)
     return result
 
 
-async def _fetch_interest(keyword: str, window: Window, settings: Settings) -> InterestResult:
+# ── Refresh (exclusivo do job agendado POST /refresh) ─────────────────────────
+
+async def refresh_interest(
+    keyword: str,
+    window: Window,
+    cache: CacheStore,
+    settings: Settings,
+) -> InterestResult:
+    """Consulta SerpAPI e atualiza o cache. Usar APENAS no job /refresh."""
     if not settings.serpapi_key:
-        points = _fallback_curve(keyword)
-        return InterestResult(points, max(p["value"] for p in points), is_real=False)
+        logger.error("SERPAPI_KEY não configurada — impossível atualizar trends.")
+        return InterestResult([], 0, is_real=False)
 
     try:
-        async with httpx.AsyncClient(timeout=15) as client:
+        async with httpx.AsyncClient(timeout=20) as client:
             resp = await client.get(
                 "https://serpapi.com/search.json",
                 params={
@@ -143,40 +161,38 @@ async def _fetch_interest(keyword: str, window: Window, settings: Settings) -> I
         if peak == 0:
             raise ValueError("Todos os valores são zero")
 
-        return InterestResult(points, peak, is_real=True)
+        result = InterestResult(points, peak, is_real=True)
+        await cache.set(
+            f"trends:interest:{keyword}:{window}",
+            result.to_dict(),
+            is_real=True,
+            ttl=settings.ttl_trends,
+        )
+        logger.info("SerpAPI OK: keyword='%s' peak=%d", keyword, peak)
+        return result
 
     except httpx.HTTPStatusError as e:
-        logger.warning("SerpAPI HTTP %s para keyword='%s': %s", e.response.status_code, keyword, e.response.text[:200])
-        points = _fallback_curve(keyword)
-        return InterestResult(points, max(p["value"] for p in points), is_real=False)
+        logger.error(
+            "SerpAPI HTTP %s para keyword='%s': %s",
+            e.response.status_code, keyword, e.response.text[:300],
+        )
+        return InterestResult([], 0, is_real=False)
     except Exception as e:
-        logger.warning("SerpAPI erro para keyword='%s': %s", keyword, e)
-        points = _fallback_curve(keyword)
-        return InterestResult(points, max(p["value"] for p in points), is_real=False)
+        logger.error("SerpAPI erro para keyword='%s': %s", keyword, e)
+        return InterestResult([], 0, is_real=False)
 
 
-async def get_related_queries(
+async def refresh_related(
     keyword: str,
     cache: CacheStore,
     settings: Settings,
 ) -> RelatedResult:
-    cache_key = f"trends:related:{keyword}"
-    hit = await cache.get(cache_key)
-    if hit:
-        d = hit["data"]
-        return RelatedResult(d["items"], d["kind"], hit["is_real"])
-
-    result = await _fetch_related(keyword, settings)
-    await cache.set(cache_key, result.to_dict(), is_real=result.is_real, ttl=settings.ttl_trends)
-    return result
-
-
-async def _fetch_related(keyword: str, settings: Settings) -> RelatedResult:
+    """Consulta SerpAPI (related queries) e atualiza o cache. APENAS no job /refresh."""
     if not settings.serpapi_key:
         return RelatedResult([], "", is_real=False)
 
     try:
-        async with httpx.AsyncClient(timeout=15) as client:
+        async with httpx.AsyncClient(timeout=20) as client:
             resp = await client.get(
                 "https://serpapi.com/search.json",
                 params={
@@ -197,41 +213,35 @@ async def _fetch_related(keyword: str, settings: Settings) -> RelatedResult:
             if rows:
                 items = [
                     {"query": r.get("query", ""), "value": r.get("extracted_value", 0)}
-                    for r in rows[: settings.max_seo_items]
+                    for r in rows[:settings.max_seo_items]
                 ]
-                return RelatedResult(items, kind, is_real=True)
+                result = RelatedResult(items, kind, is_real=True)
+                await cache.set(
+                    f"trends:related:{keyword}",
+                    result.to_dict(),
+                    is_real=True,
+                    ttl=settings.ttl_trends,
+                )
+                return result
 
         return RelatedResult([], "", is_real=False)
 
-    except httpx.HTTPStatusError as e:
-        logger.warning("SerpAPI related HTTP %s para keyword='%s': %s", e.response.status_code, keyword, e.response.text[:200])
-        return RelatedResult([], "", is_real=False)
     except Exception as e:
-        logger.warning("SerpAPI related erro para keyword='%s': %s", keyword, e)
+        logger.error("SerpAPI related erro para keyword='%s': %s", keyword, e)
         return RelatedResult([], "", is_real=False)
 
 
-async def get_macro_trends(cache: CacheStore, settings: Settings) -> MacroResult:
-    cache_key = "trends:macro:BR"
-    hit = await cache.get(cache_key)
-    if hit:
-        return MacroResult(hit["data"]["topics"], hit["is_real"])
-
-    result = await _fetch_macro()
-    await cache.set(cache_key, result.to_dict(), is_real=result.is_real, ttl=settings.ttl_macro)
-    return result
-
+# ── Macro Trends (RSS gratuito) ───────────────────────────────────────────────
 
 async def _fetch_macro() -> MacroResult:
     try:
-        import feedparser  # leve, síncrono — ok em thread de I/O
-
+        import feedparser
         feed = feedparser.parse(
             "https://trends.google.com/trends/trendingsearches/daily/rss?geo=BR"
         )
         topics = [e.title for e in feed.entries if getattr(e, "title", "")][:10]
         if topics:
             return MacroResult(topics, is_real=True)
-    except Exception:
-        pass
+    except Exception as e:
+        logger.warning("Google Trends RSS erro: %s", e)
     return MacroResult([], is_real=False)

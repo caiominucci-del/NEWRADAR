@@ -1,11 +1,11 @@
 """
-Serviço editorial — Gemini 1.5 Flash.
+Serviço editorial — Gemini.
 
-Gera ângulo editorial, título, gancho e urgência para um tema.
-Lança exceção limpa se a API key não estiver configurada ou se a resposta for inválida.
-
-Funções públicas:
-    get_editorial_angle(topic, cache, settings) → EditorialResult
+Regras de acesso à API:
+  - get_editorial_angle  → leitura de cache APENAS. Se ausente, retorna
+    estado "aguardando análise" sem chamar Gemini.
+  - refresh_editorial    → chamado EXCLUSIVAMENTE pelo job POST /refresh.
+    Consulta Gemini, salva cache.
 """
 
 from __future__ import annotations
@@ -22,11 +22,10 @@ from app.core.config import Settings
 
 logger = logging.getLogger("radar_bp.gemini")
 
-# Limita chamadas simultâneas ao Gemini para não explodir o rate limit (15 RPM free tier)
-_GEMINI_SEMAPHORE = asyncio.Semaphore(2)
-
-
 REQUIRED_FIELDS = ("angulo", "titulo", "gancho", "urgencia", "formatos", "por_que_agora")
+
+# Limita chamadas simultâneas (free tier: 15 RPM)
+_GEMINI_SEMAPHORE = asyncio.Semaphore(2)
 
 PROMPT_TEMPLATE = """\
 Você é estrategista de conteúdo do Brasil Paralelo — \
@@ -36,6 +35,7 @@ Seu tom é sério, profundo e patriótico.
 TEMA: {tema} | CATEGORIA: {categoria}
 KEYWORDS EM ALTA: {keywords}
 CONTEXTO: {descricao}
+PEAK DE INTERESSE (Google Trends): {peak}
 
 Responda APENAS com JSON válido (sem markdown, sem texto extra):
 {{
@@ -46,6 +46,8 @@ Responda APENAS com JSON válido (sem markdown, sem texto extra):
   "formatos": ["Documentário"],
   "por_que_agora": "Motivo de urgência atual — 1 frase"
 }}"""
+
+_MODELS = ["gemini-2.0-flash", "gemini-1.5-flash", "gemini-1.5-flash-latest"]
 
 
 class EditorialResult:
@@ -58,6 +60,7 @@ class EditorialResult:
         formatos: list[str],
         por_que_agora: str,
         is_real: bool,
+        pending: bool = False,
     ):
         self.angulo = angulo
         self.titulo = titulo
@@ -66,6 +69,7 @@ class EditorialResult:
         self.formatos = formatos
         self.por_que_agora = por_que_agora
         self.is_real = is_real
+        self.pending = pending
 
     def to_dict(self):
         return {
@@ -76,23 +80,24 @@ class EditorialResult:
             "formatos": self.formatos,
             "por_que_agora": self.por_que_agora,
             "is_real": self.is_real,
+            "pending": self.pending,
         }
 
     @classmethod
-    def fallback(cls, tema: str, reason: str = "") -> "EditorialResult":
-        if not reason:
-            reason = "A API Gemini não foi chamada. Verifique a configuração e os logs."
-
+    def awaiting(cls) -> "EditorialResult":
         return cls(
-            angulo=f"Simulação para '{tema}'. Razão: {reason}",
-            titulo=f"A verdade sobre {tema} que ninguém conta (simulado)",
-            gancho=f"O que está acontecendo com {tema} vai mudar o Brasil (simulado).",
-            urgencia="media",
-            formatos=["Análise", "Documentário"],
-            por_que_agora="Tema em alta nas buscas brasileiras (simulado).",
+            angulo="",
+            titulo="",
+            gancho="",
+            urgencia="",
+            formatos=[],
+            por_que_agora="",
             is_real=False,
+            pending=True,
         )
 
+
+# ── Leitura de cache (on-demand, NUNCA chama Gemini) ─────────────────────────
 
 async def get_editorial_angle(
     tema: str,
@@ -102,39 +107,43 @@ async def get_editorial_angle(
     cache: CacheStore,
     settings: Settings,
 ) -> EditorialResult:
-    cache_key = f"editorial:{tema}:{categoria}"
-    hit = await cache.get(cache_key)
+    """Lê do cache. Se ausente, retorna estado 'aguardando' — NÃO chama Gemini."""
+    hit = await cache.get(f"editorial:{tema}:{categoria}")
     if hit:
         d = hit["data"]
-        return EditorialResult(**{k: d[k] for k in REQUIRED_FIELDS}, is_real=hit["is_real"])
+        return EditorialResult(
+            **{k: d[k] for k in REQUIRED_FIELDS},
+            is_real=hit["is_real"],
+            pending=d.get("pending", False),
+        )
+    return EditorialResult.awaiting()
 
-    result = await _fetch_editorial(tema, categoria, keywords, descricao, settings)
-    await cache.set(
-        cache_key, result.to_dict(), is_real=result.is_real, ttl=settings.ttl_editorial
-    )
-    return result
 
+# ── Refresh (exclusivo do job agendado POST /refresh) ─────────────────────────
 
-async def _fetch_editorial(
+async def refresh_editorial(
     tema: str,
     categoria: str,
     keywords: list[str],
     descricao: str,
+    peak: int,
+    cache: CacheStore,
     settings: Settings,
 ) -> EditorialResult:
+    """Consulta Gemini e atualiza o cache. Usar APENAS no job /refresh."""
     if not settings.gemini_api_key:
-        return EditorialResult.fallback(tema, reason="GEMINI_API_KEY não configurada.")
+        logger.error("GEMINI_API_KEY não configurada.")
+        return EditorialResult.awaiting()
 
     prompt = PROMPT_TEMPLATE.format(
         tema=tema,
         categoria=categoria,
         keywords=", ".join(keywords[:4]),
         descricao=descricao,
+        peak=peak,
     )
 
-    _MODELS = ["gemini-2.0-flash", "gemini-1.5-flash", "gemini-1.5-flash-latest"]
-
-    last_error: str = "erro desconhecido"
+    last_error = "erro desconhecido"
     async with _GEMINI_SEMAPHORE:
         for model in _MODELS:
             try:
@@ -142,7 +151,7 @@ async def _fetch_editorial(
                     "https://generativelanguage.googleapis.com/v1beta/models/"
                     f"{model}:generateContent?key={settings.gemini_api_key}"
                 )
-                async with httpx.AsyncClient(timeout=25) as client:
+                async with httpx.AsyncClient(timeout=30) as client:
                     resp = await client.post(
                         url,
                         json={
@@ -158,9 +167,9 @@ async def _fetch_editorial(
 
                 for field in REQUIRED_FIELDS:
                     if field not in data:
-                        raise ValueError(f"Campo ausente na resposta Gemini: {field}")
+                        raise ValueError(f"Campo ausente: {field}")
 
-                return EditorialResult(
+                result = EditorialResult(
                     angulo=data["angulo"],
                     titulo=data["titulo"],
                     gancho=data["gancho"],
@@ -168,38 +177,25 @@ async def _fetch_editorial(
                     formatos=data["formatos"],
                     por_que_agora=data["por_que_agora"],
                     is_real=True,
+                    pending=False,
                 )
+                await cache.set(
+                    f"editorial:{tema}:{categoria}",
+                    result.to_dict(),
+                    is_real=True,
+                    ttl=settings.ttl_editorial,
+                )
+                logger.info("Gemini OK: tema='%s' modelo='%s'", tema, model)
+                return result
+
             except httpx.HTTPStatusError as e:
                 if e.response.status_code == 404:
                     last_error = f"modelo '{model}' não disponível (404)"
                     continue
                 if e.response.status_code == 429:
-                    logger.warning("Gemini 429 (rate limit) no modelo '%s' — aguardando 10s", model)
-                    await asyncio.sleep(10)
-                    # tenta o mesmo modelo uma vez após backoff
-                    try:
-                        async with httpx.AsyncClient(timeout=25) as client:
-                            resp = await client.post(url, json={
-                                "contents": [{"parts": [{"text": prompt}]}],
-                                "generationConfig": {"temperature": 0.65, "maxOutputTokens": 600},
-                            })
-                            resp.raise_for_status()
-                        text = resp.json()["candidates"][0]["content"]["parts"][0]["text"]
-                        text = re.sub(r"```(?:json)?\s*|\s*```", "", text).strip()
-                        data = json.loads(text)
-                        for field in REQUIRED_FIELDS:
-                            if field not in data:
-                                raise ValueError(f"Campo ausente: {field}")
-                        return EditorialResult(
-                            angulo=data["angulo"], titulo=data["titulo"],
-                            gancho=data["gancho"], urgencia=data["urgencia"],
-                            formatos=data["formatos"], por_que_agora=data["por_que_agora"],
-                            is_real=True,
-                        )
-                    except Exception:
-                        pass
-                    last_error = "rate limit (429) — tente novamente em alguns minutos"
-                    break
+                    logger.warning("Gemini 429 no modelo '%s' — backoff 15s", model)
+                    await asyncio.sleep(15)
+                    continue
                 safe_url = str(e.request.url).split("?")[0]
                 last_error = f"HTTP {e.response.status_code} em {safe_url}"
                 break
@@ -207,4 +203,5 @@ async def _fetch_editorial(
                 last_error = str(e)
                 break
 
-    return EditorialResult.fallback(tema, reason=f"Erro na API Gemini: {last_error}")
+    logger.error("Gemini falhou para tema='%s': %s", tema, last_error)
+    return EditorialResult.awaiting()

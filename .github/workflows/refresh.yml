@@ -1,0 +1,74 @@
+name: Radar BP — Atualização Diária
+
+on:
+  schedule:
+    # 07:00 BRT = 10:00 UTC (horário de Brasília é UTC-3)
+    - cron: "0 10 * * *"
+  workflow_dispatch:
+    # Permite disparo manual pela interface do GitHub Actions
+
+jobs:
+  refresh:
+    name: Atualizar dados (SerpAPI + Gemini)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      # ── 1. Acorda o servidor Render (free tier hiberna após 15min) ──────────
+      - name: Acordar servidor
+        run: |
+          echo "Aguardando servidor Render acordar..."
+          for i in $(seq 1 12); do
+            STATUS=$(curl -s -o /dev/null -w "%{http_code}" --max-time 10 "${{ secrets.API_URL }}/health" || echo "000")
+            echo "Tentativa $i: HTTP $STATUS"
+            if [ "$STATUS" = "200" ]; then
+              echo "Servidor pronto."
+              break
+            fi
+            sleep 15
+          done
+
+      # ── 2. Faz login e obtém token de admin ────────────────────────────────
+      - name: Obter token de acesso
+        id: auth
+        run: |
+          RESPONSE=$(curl -s -X POST "${{ secrets.API_URL }}/auth/login" \
+            -H "Content-Type: application/json" \
+            -d "{\"username\":\"${{ secrets.ADMIN_USER }}\",\"password\":\"${{ secrets.ADMIN_PASSWORD }}\"}")
+          echo "Login response: $RESPONSE"
+          TOKEN=$(echo "$RESPONSE" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('access_token',''))" 2>/dev/null)
+          if [ -z "$TOKEN" ]; then
+            echo "ERRO: Falha ao obter token. Verifique ADMIN_USER e ADMIN_PASSWORD nos secrets."
+            exit 1
+          fi
+          echo "token=$TOKEN" >> "$GITHUB_OUTPUT"
+          echo "Token obtido com sucesso."
+
+      # ── 3. Dispara o refresh completo ──────────────────────────────────────
+      - name: Executar refresh
+        id: refresh
+        run: |
+          echo "Iniciando refresh de dados..."
+          RESULT=$(curl -s -X POST "${{ secrets.API_URL }}/refresh" \
+            -H "Authorization: Bearer ${{ steps.auth.outputs.token }}" \
+            -H "Content-Type: application/json" \
+            --max-time 300)
+          echo "Resultado:"
+          echo "$RESULT" | python3 -m json.tool 2>/dev/null || echo "$RESULT"
+
+          # Extrai e exibe métricas
+          STATUS=$(echo "$RESULT" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('status','erro'))" 2>/dev/null)
+          TOPICS_OK=$(echo "$RESULT" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('budget',{}).get('serpapi_calls_this_run',0))" 2>/dev/null)
+          DURATION=$(echo "$RESULT" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('duration_seconds',0))" 2>/dev/null)
+
+          echo ""
+          echo "==========================="
+          echo "Status: $STATUS"
+          echo "SerpAPI calls usados: $TOPICS_OK"
+          echo "Duração: ${DURATION}s"
+          echo "==========================="
+
+          if [ "$STATUS" != "ok" ]; then
+            echo "AVISO: refresh retornou status '$STATUS'"
+            exit 1
+          fi

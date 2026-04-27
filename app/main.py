@@ -4,9 +4,6 @@ FastAPI · Python 3.12+
 
 Rodar localmente:
     uvicorn app.main:app --reload --port 8000
-
-Documentação interativa:
-    http://localhost:8000/docs
 """
 
 from contextlib import asynccontextmanager
@@ -19,7 +16,7 @@ from app.core.auth import require_admin
 from app.core.briefings import close_briefings, init_briefings
 from app.core.cache import init_cache, close_cache
 from app.core.config import get_settings
-from app.routers import trends, topics, competition, auth, briefings
+from app.routers import trends, topics, competition, auth, briefings, refresh as refresh_router
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("radar_bp")
@@ -27,7 +24,6 @@ logger = logging.getLogger("radar_bp")
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # ── Startup ────────────────────────────────────────────────────────────
     settings = get_settings()
     store = await init_cache()
     await init_briefings()
@@ -42,7 +38,6 @@ async def lifespan(app: FastAPI):
 
     yield
 
-    # ── Shutdown ───────────────────────────────────────────────────────────
     await store.purge_expired()
     await close_cache()
     await close_briefings()
@@ -52,7 +47,7 @@ async def lifespan(app: FastAPI):
 app = FastAPI(
     title="Radar BP — Inteligência Editorial",
     description="API de tendências, notícias e ângulos editoriais para o Brasil Paralelo.",
-    version="2.0.0",
+    version="3.0.0",
     lifespan=lifespan,
 )
 
@@ -72,6 +67,7 @@ app.include_router(topics.router)
 app.include_router(competition.router)
 app.include_router(auth.router)
 app.include_router(briefings.router)
+app.include_router(refresh_router.router)
 
 
 # ── Health check ───────────────────────────────────────────────────────────────
@@ -82,7 +78,7 @@ async def health():
     s = get_settings()
     return {
         "status": "ok",
-        "version": "2.0.0",
+        "version": "3.0.0",
         "keys": {
             "gemini": bool(s.gemini_api_key),
             "serpapi": bool(s.serpapi_key),
@@ -91,12 +87,17 @@ async def health():
     }
 
 
-@app.delete("/cache", tags=["meta"])
-async def clear_cache(prefix: str = "", _user=Depends(require_admin)):
-    """Invalida entradas de cache. Sem prefix = limpa tudo."""
+@app.get("/status", tags=["meta"])
+async def status():
+    """Status público do último refresh — usado pelo frontend para exibir 'Última atualização'."""
     from app.core.cache import get_cache
-    removed = await get_cache().invalidate(prefix or "")
-    return {"removed": removed, "prefix": prefix or "(all)"}
+    hit = await get_cache().get("meta:last_refresh")
+    if not hit:
+        return {
+            "last_refresh": None,
+            "message": "Nenhuma atualização realizada ainda. Aguardando job agendado.",
+        }
+    return {"last_refresh": hit["data"]}
 
 
 @app.get("/health/apis", tags=["meta"])
@@ -106,7 +107,7 @@ async def health_apis(_user=Depends(require_admin)):
     s = get_settings()
     results: dict = {}
 
-    # ── Gemini: lista modelos disponíveis (sem gerar conteúdo, sem quota) ──
+    # Gemini: lista modelos disponíveis (sem gerar conteúdo, sem quota)
     gemini_ok = False
     gemini_models_available: list[str] = []
     gemini_error = None
@@ -140,7 +141,7 @@ async def health_apis(_user=Depends(require_admin)):
         "error": gemini_error,
     }
 
-    # ── SerpAPI: verifica quota restante sem fazer busca real ───────────────
+    # SerpAPI: verifica quota restante sem fazer busca
     serpapi_ok = False
     serpapi_error = None
     serpapi_info: dict = {}
@@ -169,3 +170,11 @@ async def health_apis(_user=Depends(require_admin)):
     results["serpapi"] = {"ok": serpapi_ok, "info": serpapi_info, "error": serpapi_error}
 
     return {"apis": results}
+
+
+@app.delete("/cache", tags=["meta"])
+async def clear_cache(prefix: str = "", _user=Depends(require_admin)):
+    """Invalida entradas de cache. Sem prefix = limpa tudo."""
+    from app.core.cache import get_cache
+    removed = await get_cache().invalidate(prefix or "")
+    return {"removed": removed, "prefix": prefix or "(all)"}
