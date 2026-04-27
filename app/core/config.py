@@ -18,7 +18,7 @@ class Settings(BaseSettings):
     admin_user: str = "admin"
     admin_password: str = "1234"
     auth_secret_key: str = "change-this-secret-in-production"
-    auth_token_ttl_seconds: int = 60 * 60 * 12  # 12h
+    auth_token_ttl_seconds: int = 60 * 60 * 48  # 48h
 
     # Cache
     cache_db_path: str = "radar_cache.db"

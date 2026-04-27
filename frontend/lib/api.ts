@@ -12,7 +12,7 @@ import type {
   TopicsListResponse,
   TopicDetailWrapperResponse,
 } from "./types";
-import { getAuthToken } from "./auth";
+import { clearAuthToken, getAuthToken } from "./auth";
 
 const API_BASE =
   process.env.NEXT_PUBLIC_API_BASE_URL?.replace(/\/+$/, "") ||
@@ -46,6 +46,10 @@ async function fetchJson<T>(
   });
 
   if (!res.ok) {
+    if (res.status === 401) {
+      clearAuthToken();
+      if (typeof window !== "undefined") window.location.reload();
+    }
     const txt = await res.text().catch(() => "");
     throw new Error(`API ${res.status} ${res.statusText}: ${txt || "(sem corpo)"}`);
   }
@@ -115,6 +119,10 @@ export async function apiExportBriefing(topicId: string, format: "json" | "csv")
     cache: "no-store",
   });
   if (!res.ok) {
+    if (res.status === 401) {
+      clearAuthToken();
+      if (typeof window !== "undefined") window.location.reload();
+    }
     const txt = await res.text().catch(() => "");
     throw new Error(`API ${res.status} ${res.statusText}: ${txt || "(sem corpo)"}`);
   }

@@ -67,34 +67,30 @@ async def trigger_refresh(
         # 2. Google News RSS (gratuito)
         news = await refresh_news(keyword, settings.max_news_items, cache, settings)
 
-        # 3. Gemini — só roda se temos dados reais de trend
+        # 3. Gemini — roda sempre (usa peak=0 quando SerpAPI não retornou dados)
         editorial_ok = False
         editorial_error = None
-        if trend.is_real:
-            editorial = await refresh_editorial(
-                tema=tema,
-                categoria=topic["categoria"],
-                keywords=topic.get("keywords") or [],
-                descricao=topic["descricao"],
-                peak=trend.peak,
-                cache=cache,
-                settings=settings,
-            )
-            editorial_ok = editorial.is_real
-            if editorial.is_real:
-                gemini_calls += 1
-            # Pequena pausa entre tópicos para respeitar rate limit do Gemini
-            await asyncio.sleep(2)
-        else:
-            editorial_error = "Sem dados SerpAPI — análise Gemini ignorada"
-            logger.warning("Gemini ignorado para '%s': sem dados de trend", tema)
+        editorial = await refresh_editorial(
+            tema=tema,
+            categoria=topic["categoria"],
+            keywords=topic.get("keywords") or [],
+            descricao=topic["descricao"],
+            peak=trend.peak,  # 0 se SerpAPI falhou — Gemini usa o contexto textual mesmo assim
+            cache=cache,
+            settings=settings,
+        )
+        editorial_ok = editorial.is_real
+        if editorial.is_real:
+            gemini_calls += 1
+        # Pequena pausa entre tópicos para respeitar rate limit do Gemini
+        await asyncio.sleep(2)
 
         topic_results.append({
             "tema": tema,
             "keyword": keyword,
             "trend": {"ok": trend.is_real, "peak": trend.peak, "points": len(trend.points)},
             "news": {"ok": news.is_real, "items": len(news.items)},
-            "editorial": {"ok": editorial_ok, "error": editorial_error},
+            "editorial": {"ok": editorial_ok},
         })
 
     finished_at = datetime.now(timezone.utc)
