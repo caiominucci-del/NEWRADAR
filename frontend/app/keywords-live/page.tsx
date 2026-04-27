@@ -11,7 +11,7 @@ import TrendChart from "../../components/TrendChart";
 import type { TrendInterestResponse } from "../../lib/types";
 import { apiTrendsInterest, apiTopicsList } from "../../lib/api";
 
-const pollMs = 15 * 60_000;
+const pollMs = 30 * 60_000;
 
 function splitKeywords(s: string) {
   return s
@@ -100,7 +100,7 @@ export default function KeywordsLivePage() {
         <div>
           <div className="text-2xl font-bold">Keywords ao vivo</div>
           <div className="text-sm text-slate-300/80 mt-1">
-            Monitoramento com polling alinhado ao TTL do backend (fallback quando faltar key).
+            Monitoramento de keywords a partir dos dados do último refresh diário.
           </div>
         </div>
         <div className="flex items-center gap-3 flex-wrap">
@@ -166,15 +166,22 @@ export default function KeywordsLivePage() {
         </Card>
 
         <div className="lg:col-span-2 grid grid-cols-1 md:grid-cols-2 gap-4">
-          {keywords.map((k) => (
-            <KeywordPanel
-              key={k}
-              keyword={k}
-              window={window}
-              canRemove
-              onRemove={() => setKeywords((prev) => prev.filter((x) => x !== k))}
-            />
-          ))}
+          {keywords.length === 0 ? (
+            <div className="md:col-span-2 flex flex-col items-center justify-center py-16 text-slate-400 gap-2">
+              <div className="text-3xl opacity-40">🔍</div>
+              <div className="text-sm">Adicione keywords para monitorar.</div>
+            </div>
+          ) : (
+            keywords.map((k) => (
+              <KeywordPanel
+                key={k}
+                keyword={k}
+                window={window}
+                canRemove
+                onRemove={() => setKeywords((prev) => prev.filter((x) => x !== k))}
+              />
+            ))
+          )}
         </div>
       </div>
     </div>

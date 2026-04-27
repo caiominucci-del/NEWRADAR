@@ -11,7 +11,7 @@ import IsRealBadge from "../../components/IsRealBadge";
 import type { TopicSummaryResponse } from "../../lib/types";
 import { apiTopicsList } from "../../lib/api";
 
-const pollMs = 60_000;
+const pollMs = 30 * 60_000;
 
 function normalize(s: string) {
   return s

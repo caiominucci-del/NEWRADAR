@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
 import useSWR from "swr";
@@ -182,7 +182,7 @@ export default function TopicDetailPage() {
       <div className="grid grid-cols-1 xl:grid-cols-3 gap-4">
         <Card className="p-4 glass xl:col-span-1">
           <div className="flex items-center justify-between">
-            <div className="font-semibold">Trend (SerpAPI)</div>
+            <div className="font-semibold">Tendência (Google Trends)</div>
             <IsRealBadge isReal={topic.trend.is_real} pending={!topic.trend.is_real} />
           </div>
           <div className="mt-3">
@@ -248,7 +248,7 @@ export default function TopicDetailPage() {
             <div className="font-semibold">Editorial IA</div>
             <IsRealBadge isReal={topic.editorial.is_real} pending={(topic.editorial as any).pending} />
           </div>
-          {(topic.editorial as any).pending || !topic.editorial.is_real ? (
+          {topic.editorial.pending || !topic.editorial.is_real ? (
             <div className="flex flex-col items-center justify-center py-10 gap-3 text-center text-slate-400">
               <div className="text-3xl opacity-40">🤖</div>
               <div className="text-sm">Análise ainda não realizada.</div>

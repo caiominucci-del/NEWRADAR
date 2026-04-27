@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import useSWR from "swr";
 import Card from "../../components/ui/Card";
 import Badge from "../../components/ui/Badge";
@@ -17,7 +17,7 @@ import {
   apiTopicsList,
 } from "../../lib/api";
 
-const pollMs = 2 * 60_000;
+const pollMs = 30 * 60_000;
 
 function safeJsonParse<T>(s: string | null): T | null {
   if (!s) return null;

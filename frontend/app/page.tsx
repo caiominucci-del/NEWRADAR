@@ -10,7 +10,7 @@ import { apiCompetitionGaps, apiTrendsMacro, apiTopicsList } from "../lib/api";
 import Skeleton from "../components/ui/Skeleton";
 import Badge from "../components/ui/Badge";
 
-const pollMs = 60_000;
+const pollMs = 30 * 60_000;
 
 function NoData({ message }: { message?: string }) {
   return (

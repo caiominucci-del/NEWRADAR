@@ -11,7 +11,7 @@ import TrendChart from "../../components/TrendChart";
 import type { TrendInterestResponse, TrendRelatedResponse } from "../../lib/types";
 import { apiTrendsInterest, apiTrendsRelated } from "../../lib/api";
 
-const pollMs = 5 * 60_000;
+const pollMs = 30 * 60_000;
 
 function buildSeoSuggestions({
   keyword,
@@ -22,9 +22,8 @@ function buildSeoSuggestions({
   peak: number;
   related: TrendRelatedResponse | undefined;
 }) {
-  const top = related?.items?.slice(0, 5) ?? [];
-  const rising = related?.kind === "rising" ? top : top;
-  const relatedPhrase = rising.slice(0, 3).map((x) => x.query).join(" | ");
+  const items = related?.items?.slice(0, 5) ?? [];
+  const relatedPhrase = items.slice(0, 3).map((x) => x.query).join(" | ");
 
   const urgency = peak >= 70 ? "alta" : peak >= 40 ? "média" : "baixa";
   const title =

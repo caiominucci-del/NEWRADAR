@@ -56,6 +56,7 @@ export interface EditorialResponse {
   formatos: string[];
   por_que_agora: string;
   is_real: IsReal;
+  pending?: boolean;
 }
 
 export interface TopicBase {

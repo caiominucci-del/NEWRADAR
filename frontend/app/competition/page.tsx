@@ -9,7 +9,7 @@ import IsRealBadge from "../../components/IsRealBadge";
 import type { CompetitionChannel, TopicSummaryResponse } from "../../lib/types";
 import { apiCompetitionChannels, apiCompetitionGaps, apiTopicsList, apiTrendsRelated } from "../../lib/api";
 
-const pollMs = 2 * 60_000;
+const pollMs = 30 * 60_000; // dados têm TTL de 24h no backend — poll de 30min é suficiente
 
 function normalize(s: string) {
   return s
